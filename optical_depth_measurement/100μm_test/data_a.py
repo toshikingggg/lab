@@ -449,9 +449,12 @@ def calculate_angle_and_(n_i ,n_r ,x ,y ,x_i ,y_i, r_i,change, change_grad, get_
     return x_i_i ,y_i_i ,beta ,gradient_i, y_intercept_i, x_const_ans,ts_tmp,tp_tmp
 
 
+l_i = int(input("レーザーの出力を入力してね→[mW]"))
+#浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^10あれば十分？
 
-for step in range(600, 5000, 50):
-    for step_i in range(500, 501, 1):
+for step in range(10000, 10001, 1):
+    i_per_s = l_i / (step * 2)
+    for step_i in range(5000, 5001, 1):
         #外周の半径を定義
         #     r = int(input("外径の半径を入力(mm)"))
         #     r_i  = int(input("内径の半径を入力(mm)"))
@@ -545,8 +548,8 @@ for step in range(600, 5000, 50):
 
         # for x in range(-r+1,r):
         for x in range(-r+1,0):
-            trs_cnt = 1
-            trp_cnt = 1
+            trs_cnt = 10**10
+            trp_cnt = 10**10
             if x == 0:
                 continue
         #     print("x",x)
@@ -844,8 +847,8 @@ for step in range(600, 5000, 50):
                 ylist.append(y_get)
 
                 #透過率
-                transmittance_s_l.append(trs_cnt)
-                transmittance_p_l.append(trp_cnt)
+                transmittance_s_l.append(trs_cnt*i_per_s)
+                transmittance_p_l.append(trp_cnt*i_per_s)
 
         emplist = [r_h]*len(x_const_halflist)
         new_x_a_list,new_y_a_list = array(x_a_list,y_a_list)    
