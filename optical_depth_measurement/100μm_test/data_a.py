@@ -448,11 +448,15 @@ def calculate_angle_and_(n_i ,n_r ,x ,y ,x_i ,y_i, r_i,change, change_grad, get_
     
     return x_i_i ,y_i_i ,beta ,gradient_i, y_intercept_i, x_const_ans,ts_tmp,tp_tmp
 
+#レーザー補正用の面積比計算
+def calc_circle_of_rectangle_ratio(a_rec, radious):
+    return (a_rec * (2 * radious - a_rec)**(1/2)) / (math.pi * (radious ** 2))
 
 l_i = int(input("レーザーの出力を入力してね→[mW]"))
-#浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^10あれば十分？
-
+#浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^9あれば十分？→1nWを分解能とする
+beam_r = int(input("レーザーの半径を入力してね→[mm]"))
 for step in range(10000, 10001, 1):
+    cor_ratio = calc_circle_of_rectangle_ratio(2*step, beam_r*100000)
     i_per_s = l_i / (step * 2)
     for step_i in range(5000, 5001, 1):
         #外周の半径を定義
@@ -548,8 +552,8 @@ for step in range(10000, 10001, 1):
 
         # for x in range(-r+1,r):
         for x in range(-r+1,0):
-            trs_cnt = 10**10
-            trp_cnt = 10**10
+            trs_cnt = 10**9
+            trp_cnt = 10**9
             if x == 0:
                 continue
         #     print("x",x)
@@ -655,8 +659,8 @@ for step in range(10000, 10001, 1):
                 x_const_halflist.append(x_const)
 
                 #透過率
-                transmittance_s_l.append(trs_cnt)
-                transmittance_p_l.append(trp_cnt)
+                transmittance_s_l.append(trs_cnt*i_per_s*cor_ratio)
+                transmittance_p_l.append(trp_cnt*i_per_s*cor_ratio)
 
         #         xlist_d.append(x_d_get)
         #         ylist_d.append(y_d_get)
@@ -847,8 +851,8 @@ for step in range(10000, 10001, 1):
                 ylist.append(y_get)
 
                 #透過率
-                transmittance_s_l.append(trs_cnt*i_per_s)
-                transmittance_p_l.append(trp_cnt*i_per_s)
+                transmittance_s_l.append(trs_cnt*i_per_s*cor_ratio)
+                transmittance_p_l.append(trp_cnt*i_per_s*cor_ratio)
 
         emplist = [r_h]*len(x_const_halflist)
         new_x_a_list,new_y_a_list = array(x_a_list,y_a_list)    
