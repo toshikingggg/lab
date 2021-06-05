@@ -6,7 +6,18 @@ import numpy as np
 import gc
 from numba import jit
 
-#TODO ピンホール透過後の強度計算用の関数
+#TODO ピンホール透過後の強度倍率計算用の関数
+def Intensity_after_pinhole(x_i):
+    '''
+    横(x軸側)の分解能は1nm,レーザーの強度分布は一定と仮定して縦方向の強度比率を計算
+    '''
+    #1nm = 1で記述
+    #レーザーの縦の長さ→一旦4mmで計算
+    beam_length = 0.004*(10**9)
+    r_slit = (0.00005*(10**9)) // 2
+    slit_beam_length = 2 * (np.sqrt((r_slit**2) - (x_i**2)))
+    return slit_beam_length / beam_length
+
 
 def calc_ratio_instance(instance, e_diameter):
     return instance/(e_diameter*2)
@@ -55,6 +66,7 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
     
     count_x = []
     count_y = []
+    tes = []
     step_cnt = 0
     step = 1
     #透過距離
@@ -62,10 +74,10 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
 
     #test
     length = len(gradient) - abs(change_step)
-    print("全体の長さ",len(gradient))
-    print("スイッチ1",change_step)
-    print("スイッチ2",length)
-    print("const",const)
+    # print("全体の長さ",len(gradient))
+    # print("スイッチ1",change_step)
+    # print("スイッチ2",length)
+    # print("const",const)
 #     distance_t = np.arange(const * 2 + 1)
     #ここのとり方を変える
     #zip使うと遅くなる？→普通のforループに書き直しても良いかも
@@ -90,10 +102,8 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
             #スリット幅(斜めver)
             s_d = slit/2
             #1つ目のスリットを超えられるかどうか
-            ##この条件がおかしそう
             if x < x1y1[j][0] + s_d and x1y1[j][0] - s_d < x:
                 #2つめの条件に変更
-                #ここの計算間違っている説あり（要確認)
                 b = x2y2[j][1]
                 x = (i - b)/(a - g)
                 s_d = slit/2
@@ -101,14 +111,9 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
                 #2つ目のスリットを超えられるかどうか
                 if x < x2y2[j][0] + s_d and x2y2[j][0] - s_d < x:
                     cnt_slit2 += 1
-                    #光の本数をカウント
-                    # print("j",j)
-                    # if change_step < j:
-                    #     count_light[j] += tm
-                    #     print("条件分岐確認")
-                    # else:
-                    #     count_light[j] += tm*0.01
-                    count_light[j] += tm*change_ratio
+                    pinhole_intensity_ratio = Intensity_after_pinhole(x)
+                    tes.append(pinhole_intensity_ratio)
+                    count_light[j] +=  pinhole_intensity_ratio * tm * change_ratio
                     count_x.append(x)
                     y = g*x + i
                     count_y.append(y) 
@@ -118,7 +123,7 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
     count_light.pop(0)
     count_light =  keep + count_light      
     # temp = keep + count_light                
-    return count_light, distance_t, count_x, count_y, test_x, test_y
+    return count_light, distance_t, count_x, count_y, test_x, test_y, tes
 
 
 
@@ -128,6 +133,7 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
 #外周座標は最後の透過角を求めるために必要。
 # import time
 #回転中心が違うぽい
+#TODO a可視化してみてみたほうがいいかも　test透過角のx:  -1574086.7167711235 -273693.0436330014　値がおかしそう？
 @jit
 def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x, center_y, transmittance, sc):
 
@@ -182,9 +188,10 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
                 x = (i - b)/(a - g)
                 s_d = slit*np.cos(abs(s_sita[j]))/2
                 if x < x2y2[j][0] + s_d and x2y2[j][0] - s_d < x:
+                    pinhole_intensity_ratio = Intensity_after_pinhole(x)
                     #光の本数をカウント
-                    count_light[j] += tm
-                    # count_x.append(x)
+                    count_light[j] += tm * pinhole_intensity_ratio
+                    count_x.append(x)
                     y = g*x + i
                     # count_y.append(y)
                     a = y - yk
@@ -196,200 +203,223 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
     return count_light, t_angle, count_x, count_y, test_x, test_y
 
 cnt = 0
-scale = int(input("回転計測用の分解能を設定 ex)10→0.1°"))
+scale = int(input("回転計測用の分解能を設定 ex)10→0.1°: "))
+f = float(input("レーザーの波長を入力してください[nm]: "))
+df_spe_sens = pd.read_csv('./dataset/Spectral_Sensitivity.csv')
+index = df_spe_sens.query('lam == {}'.format(f)).index.tolist()
+Spectral_Sensitivity = df_spe_sens['C'][index]
+lx_to_nW = 0.146 * 0.46 * 0.32 / Spectral_Sensitivity
 for step in range(10000, 10001):
     for step_i in range(5000, 5001, 1):
-        #if step == 34000 and step_i < 5000:
-            #continue
+        for step_bt_slit_and_tube in range(10000,10001, 10000):
+            #if step == 34000 and step_i < 5000:
+                #continue
+                
+    #     for threshold in [tmp*0.1 for tmp in range(1, 10)]:
+            r = step
+            r_i = step_i
+            r_i = round(r_i)
+        #1mm → 100000  0.2mm → 20000 0.05mm → 5000
+        #円管とスリットの距離
+
+            #TODO ピンホールで計測したいのでここ変更
+            #細管とピンホールの距離
+            h = step_bt_slit_and_tube
+            d = r + h
+            #スリット幅
+            s = 5000
+        #         t1 = time.time() 
+            #複数のCSVファイルを順次読み込んでグラフを表示していく
+            df = pd.read_csv('./dataset/dataset_r_i_{0}_r_{1}.csv'.format(r_i, r))
+            new_x_a_list = df['x'] 
+            new_y_a_list = df['y']
+            gradient_list = df['gradient']
+            intercept_list = df['intercept']
+            center_x_list = df['change_x']
+            center_y_list = df['change_y']
+            step_change_e = df['step_change_end']
+            transmittance_slist = df['transmittance_s']
+            transmittance_plist = df['transmittance_p']
+            transmittance_list = [s+p for s,p in zip(transmittance_slist ,transmittance_plist)]
+            cnt += 1
+            if center_x_list[0] == 0 and center_y_list[0] == 0:
+                print('回転中心を定義できないため「dataset_r_i_{0}_r_{1}.csv」を飛ばしました'.format(r_i, r))
+                print('--------------------------------------------------------------')
+                continue
+            print('「dataset_r_i_{0}_r_{1}.csv」を解析中'.format(r_i, r))
+            print('step_bt_slit_and_tube:', step_bt_slit_and_tube/100000, "mm")
+
+            light_num_a, toka_angle,light_x1,light_y1,debug_x1,debug_y1 = light_receiving_t_a(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d, s , center_x_list[0], center_y_list[0], transmittance_list, scale)
+
+            #TODO light_numに対して最小検出Wを定義する必要あり 1W →　10^9されてることに注意
+
+            light_num_a.pop(0)
+
+            light_num_d, distance,light_x,light_y,debug_x2,debug_y2,debug_3 = light_receiving_t_d(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d , s, r, transmittance_list, step_change_e[0], scale)
+            print("test透過角のx: ",min(light_x1),max(light_x1))
+            # print("debug：強度",min(light_x),max(light_x))
+            print("debug,強度: ",sum(light_num_d),sum(light_num_a))
+            print("debug,pinhole: ",(min(debug_3),max(debug_3)))
+            # exit()100
             
-#     for threshold in [tmp*0.1 for tmp in range(1, 10)]:
-        r = step
-        r_i = step_i
-        r_i = round(r_i)
-    #1mm → 100000  0.2mm → 20000 0.05mm → 5000
-    #円管とスリットの距離
+            #参考値
+            print("透過角")
+            print(max(light_num_a))
+            print("透過距離")
+            print(max(light_num_d))
+            # exit()
+            
+            #受光部分の最小検出強度[nW] λ=555の時のlxーW変換値→比視感度は実験値参考。1.46[W/m^2]→1[lx]
+            #need to change    
+            for i in range(len(light_num_a)):
+                if light_num_a[i] <= lx_to_nW.iloc[-1]:
+                    light_num_a[i] = 0
+            
+            for i in range(len(light_num_d)):
+                if light_num_d[i] <= lx_to_nW.iloc[-1]:
+                    light_num_d[i] = 0    
 
-        #TODO ピンホールで計測したいのでここ変更
-        #細管とピンホールの
-        h = 100000
-        d = r + h
-        #スリット幅
-        s = 5000
-    #         t1 = time.time() 
-        #複数のCSVファイルを順次読み込んでグラフを表示していく
-        df = pd.read_csv('./dataset/dataset_r_i_{0}_r_{1}.csv'.format(r_i, r))
-        new_x_a_list = df['x'] 
-        new_y_a_list = df['y']
-        gradient_list = df['gradient']
-        intercept_list = df['intercept']
-        center_x_list = df['change_x']
-        center_y_list = df['change_y']
-        step_change_e = df['step_change_end']
-        transmittance_slist = df['transmittance_s']
-        transmittance_plist = df['transmittance_p']
-        transmittance_list = [s+p for s,p in zip(transmittance_slist ,transmittance_plist)]
-        cnt += 1
-        if center_x_list[0] == 0 and center_y_list[0] == 0:
-            print('回転中心を定義できないため「dataset_r_i_{0}_r_{1}.csv」を飛ばしました'.format(r_i, r))
-            print('--------------------------------------------------------------')
-            continue
-        print('「dataset_r_i_{0}_r_{1}.csv」を解析中'.format(r_i, r))
+            # print("tes",len(light_num_d),len(distance))
+            fig = plt.figure(figsize=(12,6))
+            #         fig.subplots_adjust(wspace=0.5)
+            ax1 = fig.add_subplot(1, 2, 1)
+            ax2 = fig.add_subplot(1, 2, 2)
+            ax1.set_xlim([0,90])
+            ax1.bar(toka_angle, light_num_a, width=1.0)
+            ax2.bar(distance, light_num_d, width=1.0)
+            ax1.set_title('Inner_diameter = {0}mm External_diameter = {1}mm'.format(r_i*2/100000, r*2/100000))
+            ax2.set_title('Inner_diameter = {0}mm External_diameter = {1}mm'.format(r_i*2/100000, r*2/100000))
+            ax1.set_xlabel('Transmission angle')
+            ax2.set_xlabel('Distance')
+            ax1.set_yticklabels([])
+            ax2.set_yticklabels([])
+            ax1.tick_params(length=0)
+            ax2.tick_params(length=0)
+            #plt.show()
+            # fig.savefig('./data_csv_test_previous/figure_d1_{0}_d2_{1}_r_i_{2}_r_{3}.png'.format(d1, d2, r_i, r))
+            fig.savefig('./figure/figure_d_{0}_r_i_{1}_r_{2}.png'.format(d, r_i, r))
+            plt.close(fig)
 
-        light_num_a, toka_angle,light_x1,light_y1,debug_x1,debug_y1 = light_receiving_t_a(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d, s , center_x_list[0], center_y_list[0], transmittance_list, scale)
+            if max(light_num_a) == 0 or max(light_num_d) == 0:
+                print("閾値を超えていません", 2*step/100000,"[mm]",2*step_i/100000,"[mm]",step_bt_slit_and_tube/100000,"[mm]")
+                continue
+            # exit()
+            #計算用
+            inner_diameter_distance = []
+            inner_diameter_angle = []
+            expected_innner_diameter_1 = []
+            expected_innner_diameter_2 = []
+            num_1 = len(light_num_d)
+            inner_diameter_distance = [0]*num_1
+            expected_innner_diameter_1 = [0]*num_1
+            num_2 = len(light_num_a)
+            inner_diameter_angle = [0]*num_2
+            expected_innner_diameter_2 = [0]*num_2
 
-        #TODO light_numに対して最小検出Wを定義する必要あり 1W →　10^9されてることに注意
+            tmp = 0
+            tmp2 = 0
+            for i in range(len(light_num_a)):   
+                if tmp < light_num_a[i]:
+                    tmp = light_num_a[i]
+                    tmp2 = toka_angle[i]
 
-        light_num_a.pop(0)
+            # print("光線数",tmp,"透過角",tmp2)
 
-        light_num_d, distance,light_x,light_y,debug_x2,debug_y2 = light_receiving_t_d(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d , s, r, transmittance_list, step_change_e[0], scale)
-        
-        #最小検出 1464はλ=555の時のlxーW変換値
-        for i in len(light_num_a):
-            if light_num_a <= 1464:
-                light_num_a[i] = 0
-        
-        for i in len(light_num_d):
-            if light_num_d <= 1464:
-                light_num_d[i] = 0    
+            tmp3 = 0
+            tmp4 = 0
 
-        # print("tes",len(light_num_d),len(distance))
-        fig = plt.figure(figsize=(12,6))
-        #         fig.subplots_adjust(wspace=0.5)
-        ax1 = fig.add_subplot(1, 2, 1)
-        ax2 = fig.add_subplot(1, 2, 2)
-        ax1.set_xlim([0,90])
-        ax1.bar(toka_angle, light_num_a, width=1.0)
-        ax2.bar(distance, light_num_d, width=1.0)
-        ax1.set_title('Inner_diameter = {0}mm External_diameter = {1}mm'.format(r_i*2/100000, r*2/100000))
-        ax2.set_title('Inner_diameter = {0}mm External_diameter = {1}mm'.format(r_i*2/100000, r*2/100000))
-        ax1.set_xlabel('Transmission angle')
-        ax2.set_xlabel('Distance')
-        ax1.set_yticklabels([])
-        ax2.set_yticklabels([])
-        ax1.tick_params(length=0)
-        ax2.tick_params(length=0)
-        #plt.show()
-        # fig.savefig('./data_csv_test_previous/figure_d1_{0}_d2_{1}_r_i_{2}_r_{3}.png'.format(d1, d2, r_i, r))
-        fig.savefig('./figure/figure_d_{0}_r_i_{1}_r_{2}.png'.format(d, r_i, r))
-        plt.close(fig)
+            for i in range(int(len(light_num_d)/2)):   
+                if tmp3 < light_num_d[i]:
+                    tmp3 = light_num_d[i]
+                    tmp4 = distance[i]
 
+            max_value = max(light_num_d)
+            max_index = light_num_d.index(max_value)
+            tmp3 = distance[max_index]
+            # print(tmp)
+            # a_ratio_instance = calc_ratio_instance(tmp, r)
+            # d_ratio_instance = calc_ratio_instance(tmp3, r)
+            # print("強度比")
+            # print("透過角",a_ratio_instance * 1000,"μW")
+            # print("透過距離",d_ratio_instance * 1000,"μW")
+            # print("光線数",tmp,"透過距離",(distance[-1]-tmp3*2)/10000,"mm")
+            print("-----------------------------------------------------")
+            #透過距離からの計算
+            a_toka = (distance[-1]-tmp3*2)/100000
+            D = 2*r/100000
+            n = 1.49/1.000292
 
-        #計算用
-        inner_diameter_distance = []
-        inner_diameter_angle = []
-        expected_innner_diameter_1 = []
-        expected_innner_diameter_2 = []
-        num_1 = len(light_num_d)
-        inner_diameter_distance = [0]*num_1
-        expected_innner_diameter_1 = [0]*num_1
-        num_2 = len(light_num_a)
-        inner_diameter_angle = [0]*num_2
-        expected_innner_diameter_2 = [0]*num_2
+            d_ans_1 = (-pow(a_toka,3)-np.sqrt(pow(a_toka,6)+pow(a_toka,2)*pow(D,2)*(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))))/(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))
+            d_ans_2 = (-pow(a_toka,3)+np.sqrt(pow(a_toka,6)+pow(a_toka,2)*pow(D,2)*(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))))/(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))
+            print("透過距離からの計算")
+            print("内径1:",d_ans_1,"内径2:",d_ans_2)
+            # print("-----------------------------------------------------")
 
-        tmp = 0
-        tmp2 = 0
-        for i in range(len(light_num_a)):   
-            if tmp < light_num_a[i]:
-                tmp = light_num_a[i]
-                tmp2 = toka_angle[i]
+            if r_i*2 - d_ans_1*100000 < r_i*2 - d_ans_2*100000:
+                d_ans = d_ans_1
+            else:
+                d_ans = d_ans_2
 
-        # print("光線数",tmp,"透過角",tmp2)
+            # print(d_ans)
+            #透過角からの計算
+            sita_ans = np.deg2rad(tmp2)
+            d_ans_3 = np.sqrt((pow(D,2)*pow(np.sin(sita_ans/2),2))/(pow(n,2)-2*n*np.cos(sita_ans/2)+1))
+            print("透過角からの計算")
+            print(d_ans_3)
+            print("-----------------------------------------------------")
+            # 期待する内径
+            print("期待する内径")
+            print(r_i*2/100000,"mm")
 
-        tmp3 = 0
-        tmp4 = 0
+            inner_diameter_distance[0] = d_ans
+            inner_diameter_angle[0] = d_ans_3
+            expected_innner_diameter_1[0] = r_i*2/100000
+            expected_innner_diameter_2[0] = r_i*2/100000
 
-        for i in range(int(len(light_num_d)/2)):   
-            if tmp3 < light_num_d[i]:
-                tmp3 = light_num_d[i]
-                tmp4 = distance[i]
+            df = pd.DataFrame({
+                'through_strength_distance':light_num_d,
+                'distance':distance,
+                'inner_diameter_distance':inner_diameter_distance,
+                'expected_innner_diameter':expected_innner_diameter_1
+            })
 
-        max_value = max(light_num_d)
-        max_index = light_num_d.index(max_value)
-        tmp3 = distance[max_index]
-        # print(tmp)
-        a_ratio_instance = calc_ratio_instance(tmp, r)
-        d_ratio_instance = calc_ratio_instance(tmp3, r)
-        print("強度比")
-        print("透過角",a_ratio_instance * 1000,"μW")
-        print("透過距離",d_ratio_instance * 1000,"μW")
-        # print("光線数",tmp,"透過距離",(distance[-1]-tmp3*2)/10000,"mm")
-        # print("-----------------------------------------------------")
-        #透過距離からの計算
-        a_toka = (distance[-1]-tmp3*2)/10000
-        D = 2*r/10000
-        n = 1.49/1.000292
+            df.to_csv('./data/distance_d_{0}_r_i_{1}_r_{2}.csv'.format(d, r_i, r), index=False)
 
-        d_ans_1 = (-pow(a_toka,3)-np.sqrt(pow(a_toka,6)+pow(a_toka,2)*pow(D,2)*(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))))/(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))
-        d_ans_2 = (-pow(a_toka,3)+np.sqrt(pow(a_toka,6)+pow(a_toka,2)*pow(D,2)*(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))))/(pow(n,2)*(pow(D,2)-pow(a_toka,2))-pow(a_toka,2))
-        # print("透過距離からの計算")
-        # print("内径1:",d_ans_1,"内径2:",d_ans_2)
-        # print("-----------------------------------------------------")
+            df2 = pd.DataFrame({
+                'through_strength_angle':light_num_a,
+                'through_angle':toka_angle,
+                'inner_diameter_angle':inner_diameter_angle,
+                'expected_innner_diameter':expected_innner_diameter_2
+            })
 
-        if r_i*2 - d_ans_1*10000 < r_i*2 - d_ans_2*10000:
-            d_ans = d_ans_1
-        else:
-            d_ans = d_ans_2
-
-        # print(d_ans)
-        #透過角からの計算
-        sita_ans = np.deg2rad(tmp2)
-        d_ans_3 = np.sqrt((pow(D,2)*pow(np.sin(sita_ans/2),2))/(pow(n,2)-2*n*np.cos(sita_ans/2)+1))
-        # print("透過角からの計算")
-        # print(d_ans_3)
-        # print("-----------------------------------------------------")
-        #期待する内径
-        # print("期待する内径")
-        # print(r_i*2/10000,"mm")
-
-        inner_diameter_distance[0] = d_ans
-        inner_diameter_angle[0] = d_ans_3
-        expected_innner_diameter_1[0] = r_i*2/10000
-        expected_innner_diameter_2[0] = r_i*2/10000
-
-        df = pd.DataFrame({
-            'through_strength_distance':light_num_d,
-            'distance':distance,
-            'inner_diameter_distance':inner_diameter_distance,
-            'expected_innner_diameter':expected_innner_diameter_1
-        })
-
-        df.to_csv('./data/distance_d_{0}_r_i_{1}_r_{2}.csv'.format(d, r_i, r), index=False)
-
-        df2 = pd.DataFrame({
-            'through_strength_angle':light_num_a,
-            'through_angle':toka_angle,
-            'inner_diameter_angle':inner_diameter_angle,
-            'expected_innner_diameter':expected_innner_diameter_2
-        })
-
-        df2.to_csv('./data/angle_d1_{0}_r_i_{1}_r_{2}.csv'.format(d, r_i, r), index=False)
+            df2.to_csv('./data/angle_d1_{0}_r_i_{1}_r_{2}.csv'.format(d, r_i, r), index=False)
 
 
-        del df
-        del new_x_a_list
-        del new_y_a_list
-        del gradient_list
-        del intercept_list
-        del center_x_list
-        del center_y_list
-        del transmittance_slist
-        del transmittance_plist
-        del transmittance_list
-        del light_num_a
-        del toka_angle
-        del light_x1
-        del light_y1
-        del debug_x1
-        del debug_y1
-        del light_num_d
-        del distance
-        del light_x
-        del light_y
-        del debug_x2
-        del debug_y2
-        del inner_diameter_distance
-        del inner_diameter_angle
-        del expected_innner_diameter_1
-        del expected_innner_diameter_2
-        del df2
-        gc.collect()
+            del df
+            del new_x_a_list
+            del new_y_a_list
+            del gradient_list
+            del intercept_list
+            del center_x_list
+            del center_y_list
+            del transmittance_slist
+            del transmittance_plist
+            del transmittance_list
+            del light_num_a
+            del toka_angle
+            del light_x1
+            del light_y1
+            del debug_x1
+            del debug_y1
+            del light_num_d
+            del distance
+            del light_x
+            del light_y
+            del debug_x2
+            del debug_y2
+            del inner_diameter_distance
+            del inner_diameter_angle
+            del expected_innner_diameter_1
+            del expected_innner_diameter_2
+            del df2
+            gc.collect()
