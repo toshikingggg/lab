@@ -455,10 +455,10 @@ def calc_circle_of_rectangle_ratio(a_rec, radious):
 l_i = int(input("レーザーの出力を入力してね→[mW]"))
 #浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^9あれば十分？→1nWを分解能とする
 beam_r = int(input("レーザーの半径を入力してね→[mm]"))
-for step in range(10000, 10001, 1):
+for step in range(100000, 100001, 1):
     cor_ratio = calc_circle_of_rectangle_ratio(2*step, beam_r*1000000)
     i_per_s = l_i / (step * 2)
-    for step_i in range(50000, 50000, 1):
+    for step_i in range(50000, 50001, 1):
         #外周の半径を定義
         #     r = int(input("外径の半径を入力(mm)"))
         #     r_i  = int(input("内径の半径を入力(mm)"))
@@ -851,8 +851,8 @@ for step in range(10000, 10001, 1):
                 ylist.append(y_get)
 
                 #透過率
-                transmittance_s_l.append(trs_cnt*i_per_s*cor_ratio)
-                transmittance_p_l.append(trp_cnt*i_per_s*cor_ratio)
+                transmittance_s_l.append(trs_cnt*i_per_s*cor_ratio*0.5)
+                transmittance_p_l.append(trp_cnt*i_per_s*cor_ratio*0.5)
 
         emplist = [r_h]*len(x_const_halflist)
         new_x_a_list,new_y_a_list = array(x_a_list,y_a_list)    
