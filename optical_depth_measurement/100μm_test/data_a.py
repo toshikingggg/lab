@@ -456,9 +456,9 @@ l_i = int(input("レーザーの出力を入力してね→[mW]"))
 #浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^9あれば十分？→1nWを分解能とする
 beam_r = int(input("レーザーの半径を入力してね→[mm]"))
 for step in range(10000, 10001, 1):
-    cor_ratio = calc_circle_of_rectangle_ratio(2*step, beam_r*100000)
+    cor_ratio = calc_circle_of_rectangle_ratio(2*step, beam_r*1000000)
     i_per_s = l_i / (step * 2)
-    for step_i in range(5000, 5001, 1):
+    for step_i in range(50000, 50000, 1):
         #外周の半径を定義
         #     r = int(input("外径の半径を入力(mm)"))
         #     r_i  = int(input("内径の半径を入力(mm)"))
@@ -466,7 +466,7 @@ for step in range(10000, 10001, 1):
         r = step
         r_i = step_i
         r_i = round(r_i)
-        r_h = 1000000
+        r_h = 10000000
         tes = r
     #         r = 40000
     #         r_i = 15000

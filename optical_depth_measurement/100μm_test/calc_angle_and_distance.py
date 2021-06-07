@@ -4,25 +4,32 @@ import pandas as pd
 import time 
 import numpy as np
 import gc
-from numba import jit
+from numba import njit, prange
+
+'''
+Numba Performance Tips
+https://numba.pydata.org/numba-doc/latest/user/performance-tips.html
+'''
 
 #TODO ピンホール透過後の強度倍率計算用の関数
+@njit
 def Intensity_after_pinhole(x_i):
     '''
     横(x軸側)の分解能は1nm,レーザーの強度分布は一定と仮定して縦方向の強度比率を計算
     '''
     #1nm = 1で記述
     #レーザーの縦の長さ→一旦4mmで計算
-    beam_length = 0.004*(10**9)
-    r_slit = (0.00005*(10**9)) // 2
+    beam_length = 4*(10**6)
+    r_slit = (0.05*(10**6)) / 2
     slit_beam_length = 2 * (np.sqrt((r_slit**2) - (x_i**2)))
     return slit_beam_length / beam_length
 
-
+@njit
 def calc_ratio_instance(instance, e_diameter):
     return instance/(e_diameter*2)
-@jit
-def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, transmittance, change_step, sc):
+
+@njit
+def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, transmittance, change_step, sc, slit_t):
     
     #スリットの位置の定義
     #配列制作用
@@ -41,7 +48,7 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
     
     #ここおかしくね？？→0.1ばいしてるから10倍分多くループ回す必要ある。。。。
     #for d in [tmp*0.1 for tmp in range(-const, const+1)]:
-    slit_ti = 1.58 * (10**6)
+    slit_ti = slit_t
     distance1 = distance
     distance2 = distance1 + slit_ti
 
@@ -107,11 +114,13 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
                 b = x2y2[j][1]
                 x = (i - b)/(a - g)
                 s_d = slit/2
-                cnt_slit1 += 1
+                cnt_slit1 += 1                
                 #2つ目のスリットを超えられるかどうか
                 if x < x2y2[j][0] + s_d and x2y2[j][0] - s_d < x:
                     cnt_slit2 += 1
-                    pinhole_intensity_ratio = Intensity_after_pinhole(x)
+                    #ピンホールを透過する時のx座標を原点を中心として補正したx座標
+                    pinhole_x = x - x2y2[j][0]
+                    pinhole_intensity_ratio = Intensity_after_pinhole(pinhole_x)
                     tes.append(pinhole_intensity_ratio)
                     count_light[j] +=  pinhole_intensity_ratio * tm * change_ratio
                     count_x.append(x)
@@ -134,8 +143,8 @@ def light_receiving_t_d(gradient , intercept, x_k, y_k, distance,  slit, r_d, tr
 # import time
 #回転中心が違うぽい
 #TODO a可視化してみてみたほうがいいかも　test透過角のx:  -1574086.7167711235 -273693.0436330014　値がおかしそう？
-@jit
-def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x, center_y, transmittance, sc):
+@njit
+def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x, center_y, transmittance, sc, slit_t):
 
     i = 0
     test_x = []
@@ -144,7 +153,7 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
     x2y2 = [[0 for _ in range(2)] for _ in range(90*sc)]
     s_sita = [0 for _ in range(180*sc + 1)]
     #スリットの厚み
-    slit_ti = 1.58 * (10**6)
+    slit_ti = slit_t
     for sita in [tmp*(1/sc) for tmp in range(180*sc, 270*sc)]:
         x1 = distance*np.cos(np.deg2rad(sita)) + center_x
         y1 = distance*np.sin(np.deg2rad(sita)) + center_y
@@ -174,7 +183,7 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
     for g, i, xk, yk, tm in zip(gradient, intercept, x_k, y_k, transmittance):
         if yk == 0:
             continue
-        for j in range(10*sc, 80*sc): #90度分の回転を表す
+        for j in prange(10*sc, 80*sc): #90度分の回転を表す
             #スリットの傾きと,光線の交点
             a = -np.tan(s_sita[j])
             b = x1y1[j][1] - a*x1y1[j][0]
@@ -186,14 +195,16 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
                 #2つめの条件に変更
                 b = x2y2[j][1] - a*x2y2[j][0]
                 x = (i - b)/(a - g)
-                s_d = slit*np.cos(abs(s_sita[j]))/2
+                s_d = slit*np.cos(abs(s_sita[j]))/2            
                 if x < x2y2[j][0] + s_d and x2y2[j][0] - s_d < x:
-                    pinhole_intensity_ratio = Intensity_after_pinhole(x)
+                    #ピンホールを透過する時のx座標を原点を中心として補正したx座標
+                    pinhole_x = x - x2y2[j][0]
+                    pinhole_intensity_ratio = Intensity_after_pinhole(pinhole_x)
                     #光の本数をカウント
                     count_light[j] += tm * pinhole_intensity_ratio
                     count_x.append(x)
                     y = g*x + i
-                    # count_y.append(y)
+                    count_y.append(y)
                     a = y - yk
                     b = xk - x
                     c = 1
@@ -204,6 +215,10 @@ def light_receiving_t_a(gradient ,intercept, x_k, y_k, distance, slit, center_x,
 
 cnt = 0
 scale = int(input("回転計測用の分解能を設定 ex)10→0.1°: "))
+slit_thickness = int(input("ピンホールの厚みを入力してください[mm]: "))
+slit_thickness *= 10**6
+slit_width = float(input("ピンホールの幅を入力してください[mm]: "))
+slit_width *= 10**6
 f = float(input("レーザーの波長を入力してください[nm]: "))
 df_spe_sens = pd.read_csv('./dataset/Spectral_Sensitivity.csv')
 index = df_spe_sens.query('lam == {}'.format(f)).index.tolist()
@@ -211,7 +226,34 @@ Spectral_Sensitivity = df_spe_sens['C'][index]
 lx_to_nW = 0.146 * 0.46 * 0.32 / Spectral_Sensitivity
 for step in range(10000, 10001):
     for step_i in range(5000, 5001, 1):
-        for step_bt_slit_and_tube in range(10000,10001, 10000):
+        #1mm → 100000  0.2mm → 20000 0.05mm → 5000
+        r = step
+        r_i = step_i
+        r_i = round(r_i)
+        #複数のCSVファイルを順次読み込んでグラフを表示していく
+        df = pd.read_csv('./dataset/dataset_r_i_{0}_r_{1}.csv'.format(r_i, r))
+        new_x_a_list_t = df['x'] 
+        new_y_a_list_t = df['y']
+        gradient_list_t = df['gradient']
+        intercept_list_t = df['intercept']
+        center_x_list_t = df['change_x']
+        center_y_list_t = df['change_y']
+        step_change_e_t = df['step_change_end']
+        transmittance_slist_t = df['transmittance_s']
+        transmittance_plist_t = df['transmittance_p']
+        transmittance_list_t = transmittance_slist_t + transmittance_plist_t
+        new_x_a_list = new_x_a_list_t.values
+        new_y_a_list= new_y_a_list_t.values
+        gradient_list = gradient_list_t.values
+        intercept_list = intercept_list_t.values
+        center_x_list = center_x_list_t.values
+        center_y_list = center_y_list_t.values
+        step_change_e = step_change_e_t.values
+        transmittance_slist = transmittance_slist_t.values
+        transmittance_plist = transmittance_plist_t.values
+        transmittance_list = transmittance_list_t.values
+        
+        for step_bt_slit_and_tube in range(100000,100001, 100000):
             #if step == 34000 and step_i < 5000:
                 #continue
                 
@@ -219,7 +261,6 @@ for step in range(10000, 10001):
             r = step
             r_i = step_i
             r_i = round(r_i)
-        #1mm → 100000  0.2mm → 20000 0.05mm → 5000
         #円管とスリットの距離
 
             #TODO ピンホールで計測したいのでここ変更
@@ -227,40 +268,29 @@ for step in range(10000, 10001):
             h = step_bt_slit_and_tube
             d = r + h
             #スリット幅
-            s = 5000
+            s = slit_width
         #         t1 = time.time() 
-            #複数のCSVファイルを順次読み込んでグラフを表示していく
-            df = pd.read_csv('./dataset/dataset_r_i_{0}_r_{1}.csv'.format(r_i, r))
-            new_x_a_list = df['x'] 
-            new_y_a_list = df['y']
-            gradient_list = df['gradient']
-            intercept_list = df['intercept']
-            center_x_list = df['change_x']
-            center_y_list = df['change_y']
-            step_change_e = df['step_change_end']
-            transmittance_slist = df['transmittance_s']
-            transmittance_plist = df['transmittance_p']
-            transmittance_list = [s+p for s,p in zip(transmittance_slist ,transmittance_plist)]
             cnt += 1
             if center_x_list[0] == 0 and center_y_list[0] == 0:
                 print('回転中心を定義できないため「dataset_r_i_{0}_r_{1}.csv」を飛ばしました'.format(r_i, r))
                 print('--------------------------------------------------------------')
                 continue
             print('「dataset_r_i_{0}_r_{1}.csv」を解析中'.format(r_i, r))
-            print('step_bt_slit_and_tube:', step_bt_slit_and_tube/100000, "mm")
+            print('step_bt_slit_and_tube:', step_bt_slit_and_tube/1000000, "mm")
 
-            light_num_a, toka_angle,light_x1,light_y1,debug_x1,debug_y1 = light_receiving_t_a(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d, s , center_x_list[0], center_y_list[0], transmittance_list, scale)
+            light_num_a, toka_angle,light_x1,light_y1,debug_x1,debug_y1 = light_receiving_t_a(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d, s , center_x_list[0], center_y_list[0], transmittance_list, scale, slit_thickness)
 
             #TODO light_numに対して最小検出Wを定義する必要あり 1W →　10^9されてることに注意
 
             light_num_a.pop(0)
 
-            light_num_d, distance,light_x,light_y,debug_x2,debug_y2,debug_3 = light_receiving_t_d(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d , s, r, transmittance_list, step_change_e[0], scale)
+            light_num_d, distance,light_x,light_y,debug_x2,debug_y2,debug_3 = light_receiving_t_d(gradient_list ,intercept_list, new_x_a_list, new_y_a_list, d , s, r, transmittance_list, step_change_e[0], scale, slit_thickness)
             print("test透過角のx: ",min(light_x1),max(light_x1))
+            print("DONE")
+            # exit()
             # print("debug：強度",min(light_x),max(light_x))
             print("debug,強度: ",sum(light_num_d),sum(light_num_a))
             print("debug,pinhole: ",(min(debug_3),max(debug_3)))
-            # exit()100
             
             #参考値
             print("透過角")
@@ -301,7 +331,7 @@ for step in range(10000, 10001):
             plt.close(fig)
 
             if max(light_num_a) == 0 or max(light_num_d) == 0:
-                print("閾値を超えていません", 2*step/100000,"[mm]",2*step_i/100000,"[mm]",step_bt_slit_and_tube/100000,"[mm]")
+                print("閾値を超えていません", 2*step/1000000,"[mm]",2*step_i/1000000,"[mm]",step_bt_slit_and_tube/1000000,"[mm]")
                 continue
             # exit()
             #計算用
