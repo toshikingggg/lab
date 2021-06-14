@@ -451,14 +451,14 @@ def calculate_angle_and_(n_i ,n_r ,x ,y ,x_i ,y_i, r_i,change, change_grad, get_
 #レーザー補正用の面積比計算
 def calc_circle_of_rectangle_ratio(a_rec, radious):
     return (a_rec * (2 * radious - a_rec)**(1/2)) / (math.pi * (radious ** 2))
-
+# lis_input = [50000]
 l_i = int(input("レーザーの出力を入力してね→[mW]"))
 #浮動小数点の誤差も考慮しないといけなそう→初期値大きいの与えれば良いかな？とりあえず10^9あれば十分？→1nWを分解能とする
 beam_r = int(input("レーザーの半径を入力してね→[mm]"))
-for step in range(100000, 100001, 1):
+for step in range(100000, 100001, 5000):
     cor_ratio = calc_circle_of_rectangle_ratio(2*step, beam_r*1000000)
     i_per_s = l_i / (step * 2)
-    for step_i in range(50000, 50001, 1):
+    for step_i in range(50000, 50001):
         #外周の半径を定義
         #     r = int(input("外径の半径を入力(mm)"))
         #     r_i  = int(input("内径の半径を入力(mm)"))
@@ -907,7 +907,7 @@ for step in range(100000, 100001, 1):
             'get_y': new_ylist
         })
 
-        df.to_csv("./dataset/dataset_r_i_{0}_r_{1}.csv".format(r_i, r), index=False)
+        df.to_csv("./new_dataset/dataset_r_i_{0}_r_{1}.csv".format(r_i, r), index=False)
 
         #         t_end = time.time()
         #         elapsed_time = t_end-t_start
